@@ -1,0 +1,16 @@
+name = "Bollard"
+uuid = "c246d123-b56a-4f4a-a166-b87a77a29f00"
+version = "0.1.0"
+authors = ["Felix Kahle felix.kahle21@gmail.com"]
+
+[deps]
+ArtifactUtils = "8b73e784-e7d8-4ea5-973d-377fed4e3bce"
+Artifacts = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+ArtifactUtils = "0.2.4"
+Artifacts = "1.11.0"
+Libdl = "1.11.0"
+Test = "1.11.0"

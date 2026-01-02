@@ -1,0 +1,173 @@
+# Copyright (c) 2025 Felix Kahle.
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+name: Build Engine & Update Artifacts
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'BOLLARD_SOURCE'
+    branches:
+      - main
+
+jobs:
+  # 1. BUILD: Compiles binaries in parallel and stashes them as workflow artifacts
+  build:
+    name: Build ${{ matrix.job.name }}
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          # Linux (lib)
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, name: linux-x64, use_cross: false, lib_dir: lib }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, name: linux-arm64, use_cross: true, lib_dir: lib }
+          # Windows (bin)
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, name: windows-x64, use_cross: false, lib_dir: bin }
+          - { os: windows-latest, target: aarch64-pc-windows-msvc, name: windows-arm64, use_cross: false, lib_dir: bin }
+          # macOS (lib)
+          - { os: macos-15, target: x86_64-apple-darwin, name: macos-x64, use_cross: false, lib_dir: lib }
+          - { os: macos-15, target: aarch64-apple-darwin, name: macos-arm64, use_cross: false, lib_dir: lib }
+
+    steps:
+      - name: Checkout Wrapper Repo
+        uses: actions/checkout@v4
+        with:
+          path: wrapper
+
+      - name: Parse BOLLARD_SOURCE
+        id: config
+        shell: bash
+        run: |
+          source wrapper/BOLLARD_SOURCE
+          echo "REPO_LINK=$LINK" >> $GITHUB_OUTPUT
+          echo "COMMIT_SHA=$SHA_HASH" >> $GITHUB_OUTPUT
+
+      - name: Clone Rust Source
+        shell: bash
+        run: |
+          git clone "${{ steps.config.outputs.REPO_LINK }}" rust_source
+          cd rust_source
+          git checkout "${{ steps.config.outputs.COMMIT_SHA }}"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: ${{ matrix.job.target }}
+
+      - name: Install cross (Linux Only)
+        if: runner.os == 'Linux' && matrix.job.use_cross == true
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build
+        shell: bash
+        run: |
+          cd rust_source
+          CMD="cargo"
+          if [ "${{ matrix.job.use_cross }}" == "true" ] && [ "$RUNNER_OS" == "Linux" ]; then
+             CMD="cross"
+          fi
+          $CMD build --release --package bollard_ffi --target ${{ matrix.job.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          OUT_DIR="dist/${{ matrix.job.lib_dir }}"
+          mkdir -p $OUT_DIR
+          # Copy binaries (wildcard to catch .dll, .so, .dylib)
+          cp rust_source/target/${{ matrix.job.target }}/release/*bollard_ffi.* $OUT_DIR/
+          # Clean up build artifacts
+          rm -f $OUT_DIR/*.d $OUT_DIR/*.exp $OUT_DIR/*.pdb
+          # Tar the structure (ensures lib/ or bin/ is at root of archive)
+          cd dist && tar -czvf ../bollard-${{ matrix.job.name }}.tar.gz .
+
+      # Upload to GitHub Actions storage (safe from API rate limits)
+      - name: Stash Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.job.name }}
+          path: bollard-${{ matrix.job.name }}.tar.gz
+          retention-days: 1
+
+  # 2. RELEASE: Downloads all stashed artifacts and uploads to GitHub Releases ONCE
+  publish_release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      TAG_NAME: ${{ steps.config.outputs.TAG_NAME }}
+      SHA_HASH: ${{ steps.config.outputs.SHA_HASH }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse BOLLARD_SOURCE
+        id: config
+        run: |
+          source BOLLARD_SOURCE
+          # We prefix with 'build-' to avoid git ambiguity with the commit SHA
+          echo "TAG_NAME=build-$SHA_HASH" >> $GITHUB_OUTPUT
+          echo "SHA_HASH=$SHA_HASH" >> $GITHUB_OUTPUT
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: release_assets
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.config.outputs.TAG_NAME }}
+          name: "Build ${{ steps.config.outputs.SHA_HASH }}"
+          body: "Automated build for commit ${{ steps.config.outputs.SHA_HASH }}"
+          files: release_assets/*.tar.gz
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 3. UPDATE: Updates Julia artifacts using the newly created release
+  update_toml:
+    needs: publish_release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: julia-actions/setup-julia@v1
+        with:
+            version: '1'
+          
+      - name: Update Artifacts.toml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Pass the prefixed tag name to the script
+          julia --color=yes -e 'using Pkg; Pkg.activate(; temp=true); Pkg.add("ArtifactUtils"); include("update_artifacts.jl")' -- "${{ needs.publish_release.outputs.TAG_NAME }}"
+
+      - name: Commit Artifacts.toml
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Artifacts.toml: Sync with ${{ needs.publish_release.outputs.SHA_HASH }}"
+          file_pattern: "Artifacts.toml"
