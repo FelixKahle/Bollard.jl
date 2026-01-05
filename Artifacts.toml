@@ -1,0 +1,50 @@
+[[bollard_ffi]]
+arch = "x86_64"
+git-tree-sha1 = "bf933b5ac3792f9c4e2013766faf1e53d1d0a4ee"
+libc = "glibc"
+os = "linux"
+
+[[bollard_ffi.download]]
+sha256 = "7acfdfbba0a869f05fbb5138e11be16a447ab5ddab7d208e493ae4258f574c93"
+url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-3059a87e57173cd39e60999258843e484a2a3bfb/bollard-linux-x64.tar.gz"
+[[bollard_ffi]]
+arch = "aarch64"
+git-tree-sha1 = "1bf81ded2ff3589bf08977154846cd8fdb1135f0"
+libc = "glibc"
+os = "linux"
+
+[[bollard_ffi.download]]
+sha256 = "2306ef89d8936514d175ebce2a009f6043beaf61994c592cb6de92199b31dc26"
+url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-3059a87e57173cd39e60999258843e484a2a3bfb/bollard-linux-arm64.tar.gz"
+[[bollard_ffi]]
+arch = "x86_64"
+git-tree-sha1 = "11298e7176981e80ce1e3103b00da1be8ac44ce0"
+os = "windows"
+
+[[bollard_ffi.download]]
+sha256 = "2f2feff1326edc79f7e90b15c232651abb206fb85d81ad4a8a278869116def71"
+url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-3059a87e57173cd39e60999258843e484a2a3bfb/bollard-windows-x64.tar.gz"
+[[bollard_ffi]]
+arch = "aarch64"
+git-tree-sha1 = "6c760e7f96255a4e3eebb2b95ac4314f44794ca2"
+os = "windows"
+
+[[bollard_ffi.download]]
+sha256 = "8e43a01e932cff4d9f1ecdacde5966ddc8f04241ee6a48ec21082fef4bdf6d1c"
+url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-3059a87e57173cd39e60999258843e484a2a3bfb/bollard-windows-arm64.tar.gz"
+[[bollard_ffi]]
+arch = "x86_64"
+git-tree-sha1 = "cb33a54588983529820a2a011f59bf7bda5d68c7"
+os = "macos"
+
+[[bollard_ffi.download]]
+sha256 = "3e651266900d08cfdc0764b1be42f7b9db39e9416e2d9c492da03961db683232"
+url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-3059a87e57173cd39e60999258843e484a2a3bfb/bollard-macos-x64.tar.gz"
+[[bollard_ffi]]
+arch = "aarch64"
+git-tree-sha1 = "f9065814c2225ce7c458dd201fec954910c457ec"
+os = "macos"
+
+[[bollard_ffi.download]]
+sha256 = "0d193a2fe0dc9db37f5669322a183d3c32090c7cc205e77a3dee742ba9d45675"
+url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-3059a87e57173cd39e60999258843e484a2a3bfb/bollard-macos-arm64.tar.gz"
