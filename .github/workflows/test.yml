@@ -80,6 +80,7 @@ jobs:
           toolchain: stable
           target: ${{ matrix.target }}
           rustflags: ""
+          rust-src-dir: "rust_source"
 
       - name: Build Rust Library
         shell: bash

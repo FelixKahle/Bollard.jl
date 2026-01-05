@@ -77,6 +77,7 @@ jobs:
           toolchain: stable
           target: ${{ matrix.job.target }}
           rustflags: ""
+          rust-src-dir: "rust_source"
 
       - name: Install cross (Linux Only)
         if: runner.os == 'Linux' && matrix.job.use_cross == true
