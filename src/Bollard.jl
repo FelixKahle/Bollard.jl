@@ -47,18 +47,31 @@ export BnbSolver, BnbSolverOutcome, FixedAssignment
 export BnbSolverStatus, BnbTerminationReason
 export solve
 
-const bollard_ffi_root = artifact"bollard_ffi"
 global libbollard_ffi = ""
 
 function __init__()
-    global libbollard_ffi = if Sys.iswindows()
-        joinpath(bollard_ffi_root, "bin", "bollard_ffi.dll")
+    if haskey(ENV, "BOLLARD_FFI_LIB")
+        build_dir = ENV["BOLLARD_FFI_LIB"]
+
+        file_name = if Sys.iswindows()
+            "bollard_ffi.dll"
+        else
+            "libbollard_ffi.$(Libdl.dlext)"
+        end
+
+        global libbollard_ffi = joinpath(build_dir, file_name)
     else
-        joinpath(bollard_ffi_root, "lib", "libbollard_ffi.$(Libdl.dlext)")
+        root = artifact"bollard_ffi"
+
+        global libbollard_ffi = if Sys.iswindows()
+            joinpath(root, "bin", "bollard_ffi.dll")
+        else
+            joinpath(root, "lib", "libbollard_ffi.$(Libdl.dlext)")
+        end
     end
 
     if !isfile(libbollard_ffi)
-        error("Bollard library not found at $libbollard_ffi. Check your Artifacts.toml.")
+        error("Bollard library not found at: $libbollard_ffi\n(Override active: $(haskey(ENV, "BOLLARD_FFI_LIB")))")
     end
 end
 

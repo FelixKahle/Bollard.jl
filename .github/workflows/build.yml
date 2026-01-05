@@ -33,7 +33,6 @@ on:
       - main
 
 jobs:
-  # 1. BUILD: Compiles binaries in parallel and stashes them as workflow artifacts
   build:
     name: Build ${{ matrix.job.name }}
     runs-on: ${{ matrix.job.os }}
@@ -72,10 +71,12 @@ jobs:
           cd rust_source
           git checkout "${{ steps.config.outputs.COMMIT_SHA }}"
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          targets: ${{ matrix.job.target }}
+          target: ${{ matrix.job.target }}
+          rustflags: ""
 
       - name: Install cross (Linux Only)
         if: runner.os == 'Linux' && matrix.job.use_cross == true
@@ -103,7 +104,6 @@ jobs:
           # Tar the structure (ensures lib/ or bin/ is at root of archive)
           cd dist && tar -czvf ../bollard-${{ matrix.job.name }}.tar.gz .
 
-      # Upload to GitHub Actions storage (safe from API rate limits)
       - name: Stash Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -111,7 +111,6 @@ jobs:
           path: bollard-${{ matrix.job.name }}.tar.gz
           retention-days: 1
 
-  # 2. RELEASE: Downloads all stashed artifacts and uploads to GitHub Releases ONCE
   publish_release:
     name: Publish Release
     needs: build
@@ -148,7 +147,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # 3. UPDATE: Updates Julia artifacts using the newly created release
   update_toml:
     needs: publish_release
     runs-on: ubuntu-latest

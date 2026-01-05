@@ -44,17 +44,66 @@ jobs:
           - ubuntu-latest
           - windows-latest
           - macos-15
-
         include:
+          # Added 'target' for Rust toolchain
           - os: ubuntu-latest
             name: ubuntu-x64
+            target: x86_64-unknown-linux-gnu
           - os: windows-latest
             name: windows-x64
+            target: x86_64-pc-windows-msvc
           - os: macos-15
             name: macos-arm64
+            target: aarch64-apple-darwin
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Parse BOLLARD_SOURCE
+        id: config
+        shell: bash
+        run: |
+          source BOLLARD_SOURCE
+          echo "REPO_LINK=$LINK" >> $GITHUB_OUTPUT
+          echo "COMMIT_SHA=$SHA_HASH" >> $GITHUB_OUTPUT
+
+      - name: Clone Rust Source
+        shell: bash
+        run: |
+          git clone "${{ steps.config.outputs.REPO_LINK }}" rust_source
+          cd rust_source
+          git checkout "${{ steps.config.outputs.COMMIT_SHA }}"
+
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          rustflags: ""
+
+      - name: Build Rust Library
+        shell: bash
+        run: |
+          cd rust_source
+          cargo build --release --package bollard_ffi --target ${{ matrix.target }}
+
+      - name: Set Library Paths
+        shell: bash
+        run: |
+          # Define the path to the built artifacts
+          LIB_PATH=$(pwd)/rust_source/target/${{ matrix.target }}/release
+          
+          # 1. Set a specific ENV var (Common pattern for wrappers to override artifacts)
+          echo "BOLLARD_FFI_LIB=$LIB_PATH" >> $GITHUB_ENV
+          
+          # 2. Also update dynamic linker paths just in case
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            echo "$LIB_PATH" >> $GITHUB_PATH
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            echo "DYLD_LIBRARY_PATH=$LIB_PATH:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+          else
+            echo "LD_LIBRARY_PATH=$LIB_PATH:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+          fi
 
       - uses: julia-actions/setup-julia@v1
         with:
