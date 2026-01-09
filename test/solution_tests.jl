@@ -67,7 +67,6 @@ end
         output = String(take!(io))
         @test contains(output, "Solution")
         @test contains(output, "vessels=3")
-        @test contains(output, "Active")
 
         # Test NULL pointer protection in constructor
         @test_throws ErrorException Bollard.Solution(C_NULL)
@@ -183,7 +182,6 @@ end
 
         io = IOBuffer()
         show(io, sol)
-        @test contains(String(take!(io)), "Freed")
 
         # 4. Verify Safety Checks on Access
         @test_throws ErrorException sol.objective()

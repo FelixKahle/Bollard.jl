@@ -170,7 +170,6 @@ end
 Base.propertynames(::BnbTermination) = (:reason, :message)
 
 function Base.getproperty(t::BnbTermination, s::Symbol)
-    # SAFETY: Use getfield to avoid infinite recursion when checking :ptr
     ptr = getfield(t, :ptr)
     ptr == C_NULL && error("accessing freed BnbTermination object")
 
@@ -238,7 +237,6 @@ Base.propertynames(::BnbStatistics) = (
 )
 
 function Base.getproperty(s::BnbStatistics, sym::Symbol)
-    # SAFETY: Use getfield to avoid infinite recursion
     ptr = getfield(s, :ptr)
     ptr == C_NULL && error("accessing freed BnbStatistics object")
 
@@ -266,11 +264,9 @@ function Base.getproperty(s::BnbStatistics, sym::Symbol)
 end
 
 function Base.show(io::IO, s::BnbStatistics)
-    if getfield(s, :ptr) == C_NULL
-        print(io, "BnbStatistics(Freed)")
-    else
-        print(io, "BnbStatistics(nodes=$(s.nodes_explored), solutions=$(s.solutions_found), time=$(s.time_total_ms)ms)")
-    end
+    @assert getfield(s, :ptr) != C_NULL "accessing freed BnbStatistics object"
+
+    print(io, "BnbStatistics(nodes=$(s.nodes_explored), solutions=$(s.solutions_found), time=$(s.time_total_ms)ms)")
 end
 
 # =========================================================================
@@ -298,17 +294,15 @@ mutable struct BnbOutcome
     function BnbOutcome(ptr::Ptr{Cvoid})
         ptr == C_NULL && error("cannot wrap null BnbOutcome pointer")
 
-        # 1. Extract raw pointers from the outcome container
         raw_term = ccall((:bollard_bnb_outcome_termination, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
         raw_res = ccall((:bollard_bnb_outcome_result, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
         raw_stats = ccall((:bollard_bnb_outcome_statistics, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
 
-        # 2. Wrap them into Julia objects. These objects now own the *content* pointers.
+
         term_obj = BnbTermination(raw_term)
         res_obj = SolverResult(raw_res)
         stats_obj = BnbStatistics(raw_stats)
 
-        # 3. Create the container wrapper.
         instance = new(ptr, term_obj, res_obj, stats_obj)
 
         finalizer(instance) do x
@@ -327,7 +321,6 @@ end
 Base.propertynames(::BnbOutcome) = (:termination, :result, :statistics)
 
 function Base.getproperty(o::BnbOutcome, s::Symbol)
-    # SAFETY: Use getfield to avoid infinite recursion
     ptr = getfield(o, :ptr)
     ptr == C_NULL && error("accessing freed BnbOutcome object")
 
@@ -339,11 +332,10 @@ function Base.getproperty(o::BnbOutcome, s::Symbol)
 end
 
 function Base.show(io::IO, o::BnbOutcome)
-    if getfield(o, :ptr) == C_NULL
-        print(io, "BnbOutcome(Freed)")
-    else
-        print(io, "BnbOutcome($(o.termination.reason))")
-    end
+    ptr = getfield(o, :ptr)
+    @assert ptr != C_NULL "accessing freed BnbOutcome object"
+
+    print(io, "BnbOutcome($(o.termination.reason))")
 end
 
 # =========================================================================
@@ -455,6 +447,8 @@ function solve(
 end
 
 function Base.show(io::IO, s::BnbSolver)
-    status = getfield(s, :ptr) == C_NULL ? "Freed" : "Ready"
-    print(io, "BnbSolver [$status]")
+    ptr = getfield(s, :ptr)
+    @assert ptr != C_NULL "accessing freed BnbSolver object"
+
+    print(io, "BnbSolver")
 end

@@ -81,7 +81,7 @@ end
         @testset "Default Constructor" begin
             solver = BnbSolver()
             @test solver.ptr != C_NULL
-            @test contains(repr(solver), "Ready")
+            @test contains(repr(solver), "BnbSolver")
             # Finalizer runs automatically at block end or GC
         end
 

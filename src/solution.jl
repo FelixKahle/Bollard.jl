@@ -235,6 +235,5 @@ Base.length(s::AbstractBollardSolution) = getfield(s, :num_vessels)
 Print a summary of the Solution.
 """
 function Base.show(io::IO, s::Solution)
-    status = getfield(s, :ptr) == C_NULL ? "Freed" : "Active"
-    print(io, "Bollard.Solution(vessels=$(getfield(s, :num_vessels))) [$status]")
+    print(io, "Bollard.Solution(vessels=$(getfield(s, :num_vessels)))")
 end

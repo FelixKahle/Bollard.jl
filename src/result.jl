@@ -120,12 +120,7 @@ function Base.getproperty(t::Termination, s::Symbol)
 end
 
 function Base.show(io::IO, t::Termination)
-    if getfield(t, :ptr) == C_NULL
-        print(io, "Termination(Freed)")
-    else
-        # Safe to access properties now that we checked ptr
-        print(io, "Termination($(t.reason): \"$(t.message)\")")
-    end
+    print(io, "Termination($(t.reason): \"$(t.message)\")")
 end
 
 # =========================================================================
@@ -208,11 +203,9 @@ function Base.getproperty(r::SolverResult, s::Symbol)
         return unsafe_string(str_ptr)
 
     elseif s === :has_solution
-        # Use cached Julia field to avoid FFI call
         return getfield(r, :solution) !== nothing
 
     elseif s === :solution
-        # Use cached Julia field
         return getfield(r, :solution)
 
     else
@@ -221,15 +214,12 @@ function Base.getproperty(r::SolverResult, s::Symbol)
 end
 
 function Base.show(io::IO, r::SolverResult)
-    if getfield(r, :ptr) == C_NULL
-        print(io, "SolverResult(Freed)")
-    else
-        sol = getfield(r, :solution)
-        has_sol = sol !== nothing
-        sol_text = has_sol ? "Solution Found" : "No Solution"
+    ptr = getfield(r, :ptr)
+    @assert ptr != C_NULL "attempting to show freed SolverResult"
 
-        # Safe to access properties now that we checked ptr
-        stat = r.status
-        print(io, "SolverResult($stat, $sol_text)")
-    end
+    sol = getfield(r, :solution)
+    sol_text = sol !== nothing ? "Solution Found" : "No Solution"
+
+    stat = r.status
+    print(io, "SolverResult($stat, $sol_text)")
 end
