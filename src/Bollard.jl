@@ -42,27 +42,35 @@ import Base: show, size, length, getproperty, propertynames
 using Artifacts
 using Libdl
 
+# Model Definition
 export ModelBuilder, Model, FfiOpenClosedInterval
-export BnbSolver, BnbSolverOutcome, FixedAssignment
-export BnbSolverStatus, BnbTerminationReason
-export solve
+
+# Solution & Views
+export Solution, SolutionView
+
+# Results & Status Codes
+export SolverResult, Termination, SolverStatus, TerminationReason
+export StatusOptimal, StatusFeasible, StatusInfeasible, StatusUnknown
+export ReasonOptimalityProven, ReasonInfeasibilityProven, ReasonConverged, ReasonAborted
+
+# BnB Solver
+# BnB Solver Types
+export BnbDecisionBuilderType, BnbObjectiveEvaluatorType, BnbFixedAssignment
+export BnbTermination, BnbStatistics, BnbOutcome, BnbSolver, solve
 
 global libbollard_ffi = ""
 
 function __init__()
     if haskey(ENV, "BOLLARD_FFI_LIB")
         build_dir = ENV["BOLLARD_FFI_LIB"]
-
         file_name = if Sys.iswindows()
             "bollard_ffi.dll"
         else
             "libbollard_ffi.$(Libdl.dlext)"
         end
-
         global libbollard_ffi = joinpath(build_dir, file_name)
     else
         root = artifact"bollard_ffi"
-
         global libbollard_ffi = if Sys.iswindows()
             joinpath(root, "bin", "bollard_ffi.dll")
         else
@@ -75,7 +83,11 @@ function __init__()
     end
 end
 
-include("model.jl")
-include("bnb.jl")
+# Note that the order of includes matters due to dependencies between types.
+
+include("model.jl")    # Defines Model
+include("solution.jl") # Defines Solution (needed by Result)
+include("result.jl")   # Defines SolverResult (wraps Solution)
+include("bnb.jl")      # Defines BnbSolver and related types
 
 end # module Bollard

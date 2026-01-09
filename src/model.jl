@@ -151,6 +151,23 @@ mutable struct Model <: AbstractBollardModel
     end
 end
 
+"""
+    ModelView{T} <: AbstractVector{T}
+
+A safe, zero-copy view into memory owned by a `Model`.
+This struct holds a reference to the `parent` Model to prevent it from being
+garbage collected while the view is in use.
+"""
+struct ModelView{T} <: AbstractVector{T}
+    parent::Model
+    data::Vector{T}
+end
+
+Base.size(v::ModelView) = size(v.data)
+Base.getindex(v::ModelView, i::Int) = getindex(v.data, i)
+Base.IndexStyle(::Type{<:ModelView}) = IndexLinear()
+Base.convert(::Type{Vector{T}}, v::ModelView{T}) where T = copy(v)
+
 # =========================================================================
 # ModelBuilder Properties (Setters)
 # =========================================================================
@@ -162,8 +179,8 @@ Return the list of properties (methods) available on a `ModelBuilder` instance.
 These acts as the public API for configuring the model.
 """
 function Base.propertynames(::ModelBuilder)
-    return (:add_closing_time!, :add_opening_time!, :set_arrival_time!,
-        :set_latest_departure_time!, :set_processing_time!, :forbid_assignment!, :set_weight!, :build)
+    return (:add_closing_time!, :add_opening_time!, :arrival_time!,
+        :latest_departure_time!, :processing_time!, :forbid_assignment!, :weight!, :build)
 end
 
 """
@@ -173,20 +190,24 @@ Dispatch for `ModelBuilder` configuration methods. Returns a function closure
 that wraps the corresponding Rust FFI call.
 """
 function Base.getproperty(m::ModelBuilder, s::Symbol)
+    ptr = getfield(m, :ptr)
+    num_vessels = getfield(m, :num_vessels)
+    num_berths = getfield(m, :num_berths)
+
     # --- Processing Time ---
-    if s === :set_processing_time!
+    if s === :processing_time!
         """
-            set_processing_time!(vessel_idx::Integer, berth_idx::Integer, duration::Int64)
+            processing_time!(vessel_idx::Integer, berth_idx::Integer, duration::Int64)
 
         Set the time required to process a specific vessel at a specific berth.
         """
         return (vessel_idx, berth_idx, duration) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
-            @boundscheck 1 <= berth_idx <= m.num_berths || throw(BoundsError(m, berth_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= berth_idx <= num_berths || throw(BoundsError(m, berth_idx))
 
             ccall((:bollard_model_builder_set_processing_time, libbollard_ffi), Cvoid,
                 (Ptr{Cvoid}, Csize_t, Csize_t, Int64),
-                m.ptr, vessel_idx - 1, berth_idx - 1, duration)
+                ptr, vessel_idx - 1, berth_idx - 1, duration)
             return m
         end
 
@@ -199,12 +220,12 @@ function Base.getproperty(m::ModelBuilder, s::Symbol)
         Effectively sets the processing time to "infinity" (None).
         """
         return (vessel_idx, berth_idx) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
-            @boundscheck 1 <= berth_idx <= m.num_berths || throw(BoundsError(m, berth_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= berth_idx <= num_berths || throw(BoundsError(m, berth_idx))
 
             ccall((:bollard_model_builder_forbid_vessel_berth_assignment, libbollard_ffi), Cvoid,
                 (Ptr{Cvoid}, Csize_t, Csize_t),
-                m.ptr, vessel_idx - 1, berth_idx - 1)
+                ptr, vessel_idx - 1, berth_idx - 1)
             return m
         end
 
@@ -216,10 +237,11 @@ function Base.getproperty(m::ModelBuilder, s::Symbol)
         Add a "closed" interval to a berth (e.g., maintenance). The berth is unavailable during `[start, end)`.
         """
         return (berth_idx, start_time, stop_time) -> begin
-            @boundscheck 1 <= berth_idx <= m.num_berths || throw(BoundsError(m, berth_idx))
+            @boundscheck 1 <= berth_idx <= num_berths || throw(BoundsError(m, berth_idx))
+
             interval = FfiOpenClosedInterval(start_time, stop_time)
             ccall((:bollard_model_builder_add_closing_time, libbollard_ffi), Cvoid,
-                (Ptr{Cvoid}, Csize_t, FfiOpenClosedInterval), m.ptr, berth_idx - 1, interval)
+                (Ptr{Cvoid}, Csize_t, FfiOpenClosedInterval), ptr, berth_idx - 1, interval)
             return m
         end
 
@@ -231,53 +253,57 @@ function Base.getproperty(m::ModelBuilder, s::Symbol)
         Add an "open" interval to a berth. The berth is available for servicing vessels during `[start, end)`.
         """
         return (berth_idx, start_time, stop_time) -> begin
-            @boundscheck 1 <= berth_idx <= m.num_berths || throw(BoundsError(m, berth_idx))
+            @boundscheck 1 <= berth_idx <= num_berths || throw(BoundsError(m, berth_idx))
+
             interval = FfiOpenClosedInterval(start_time, stop_time)
             ccall((:bollard_model_builder_add_opening_time, libbollard_ffi), Cvoid,
-                (Ptr{Cvoid}, Csize_t, FfiOpenClosedInterval), m.ptr, berth_idx - 1, interval)
+                (Ptr{Cvoid}, Csize_t, FfiOpenClosedInterval), ptr, berth_idx - 1, interval)
             return m
         end
 
         # --- Arrival Time ---
-    elseif s === :set_arrival_time!
+    elseif s === :arrival_time!
         """
-            set_arrival_time!(vessel_idx::Integer, timestamp::Int64)
+            arrival_time!(vessel_idx::Integer, timestamp::Int64)
 
         Set the earliest possible arrival time for a vessel.
         """
         return (vessel_idx, timestamp) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+
             ccall((:bollard_model_builder_set_arrival_time, libbollard_ffi), Cvoid,
-                (Ptr{Cvoid}, Csize_t, Int64), m.ptr, vessel_idx - 1, timestamp)
+                (Ptr{Cvoid}, Csize_t, Int64), ptr, vessel_idx - 1, timestamp)
             return m
         end
 
         # --- Departure Time ---
-    elseif s === :set_latest_departure_time!
+    elseif s === :latest_departure_time!
         """
-            set_latest_departure_time!(vessel_idx::Integer, timestamp::Int64)
+            latest_departure_time!(vessel_idx::Integer, timestamp::Int64)
 
         Set the deadline by which the vessel must complete service.
         """
         return (vessel_idx, timestamp) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+
             ccall((:bollard_model_builder_set_latest_departure_time, libbollard_ffi), Cvoid,
-                (Ptr{Cvoid}, Csize_t, Int64), m.ptr, vessel_idx - 1, timestamp)
+                (Ptr{Cvoid}, Csize_t, Int64), ptr, vessel_idx - 1, timestamp)
             return m
         end
 
         # --- Vessel Weight ---
-    elseif s === :set_weight!
+    elseif s === :weight!
         """
-            set_weight!(vessel_idx::Integer, weight_val::Int64)
+            weight!(vessel_idx::Integer, weight_val::Int64)
 
         Set the objective function weight (priority) for a vessel. Must be non-negative.
         """
         return (vessel_idx, weight_val) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+
             weight_val < 0 && throw(ArgumentError("objective weights must be non-negative"))
             ccall((:bollard_model_builder_set_vessel_weight, libbollard_ffi), Cvoid,
-                (Ptr{Cvoid}, Csize_t, Int64), m.ptr, vessel_idx - 1, weight_val)
+                (Ptr{Cvoid}, Csize_t, Int64), ptr, vessel_idx - 1, weight_val)
             return m
         end
 
@@ -304,9 +330,12 @@ end
 Return the list of properties (methods) available on a compiled `Model` instance.
 """
 function Base.propertynames(::Model)
-    return (:get_weight, :get_processing_time, :get_arrival_time,
-        :get_latest_departure_time, :get_opening_intervals, :get_closing_intervals,
-        :log_complexity, :num_vessels, :num_berths, :is_allowed, :is_forbidden)
+    return (
+        :weight, :processing_time, :arrival_time, :latest_departure_time,
+        :arrival_times, :latest_departure_times, :processing_times,
+        :opening_intervals, :closing_intervals,
+        :log_complexity, :num_vessels, :num_berths, :is_allowed, :is_forbidden
+    )
 end
 
 """
@@ -316,106 +345,152 @@ Dispatch for `Model` query methods. Returns a function closure that wraps
 the corresponding Rust FFI call.
 """
 function Base.getproperty(m::Model, s::Symbol)
-    # --- Get Processing Time ---
-    if s === :get_processing_time
+    ptr = getfield(m, :ptr)
+    num_vessels = getfield(m, :num_vessels)
+    num_berths = getfield(m, :num_berths)
+
+    # --- Scalar Getters ---
+
+    if s === :processing_time
         """
-            get_processing_time(vessel_idx::Integer, berth_idx::Integer) -> Int64
+            processing_time(vessel_idx::Integer, berth_idx::Integer) -> Int64
 
         Get the configured processing time. Returns `-1` if the vessel cannot assign to this berth.
         """
         return (vessel_idx, berth_idx) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
-            @boundscheck 1 <= berth_idx <= m.num_berths || throw(BoundsError(m, berth_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= berth_idx <= num_berths || throw(BoundsError(m, berth_idx))
 
             ccall((:bollard_model_processing_time, libbollard_ffi), Int64,
                 (Ptr{Cvoid}, Csize_t, Csize_t),
-                m.ptr, vessel_idx - 1, berth_idx - 1)
+                ptr, vessel_idx - 1, berth_idx - 1)
         end
 
-        # --- Get Vessel Weight ---
-    elseif s === :get_weight
+    elseif s === :weight
         """
-            get_weight(vessel_idx::Integer) -> Int64
+            weight(vessel_idx::Integer) -> Int64
 
         Get the weight assigned to a vessel.
         """
         return (vessel_idx) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+
             ccall((:bollard_model_vessel_weight, libbollard_ffi), Int64,
-                (Ptr{Cvoid}, Csize_t), m.ptr, vessel_idx - 1)
+                (Ptr{Cvoid}, Csize_t), ptr, vessel_idx - 1)
         end
 
-        # --- Get Arrival Time ---
-    elseif s === :get_arrival_time
+    elseif s === :arrival_time
         """
-            get_arrival_time(vessel_idx::Integer) -> Int64
+            arrival_time(vessel_idx::Integer) -> Int64
 
         Get the earliest arrival time for a vessel.
         """
         return (vessel_idx) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+
             ccall((:bollard_model_vessel_arrival_time, libbollard_ffi), Int64,
-                (Ptr{Cvoid}, Csize_t), m.ptr, vessel_idx - 1)
+                (Ptr{Cvoid}, Csize_t), ptr, vessel_idx - 1)
         end
 
-        # --- Get Latest Departure Time ---
-    elseif s === :get_latest_departure_time
+    elseif s === :latest_departure_time
         """
-            get_latest_departure_time(vessel_idx::Integer) -> Int64
+            latest_departure_time(vessel_idx::Integer) -> Int64
 
         Get the latest allowed departure time for a vessel.
         """
         return (vessel_idx) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+
             ccall((:bollard_model_vessel_latest_departure_time, libbollard_ffi), Int64,
-                (Ptr{Cvoid}, Csize_t), m.ptr, vessel_idx - 1)
+                (Ptr{Cvoid}, Csize_t), ptr, vessel_idx - 1)
         end
 
-        # --- Get Opening Intervals ---
-    elseif s === :get_opening_intervals
-        """
-            get_opening_intervals(berth_idx::Integer) -> Vector{FfiOpenClosedInterval}
+        # --- Array (Zero-Copy Safe View) Getters ---
 
-        Retrieve the list of available (open) time windows for a specific berth.
+    elseif s === :arrival_times
+        """
+            arrival_times() -> ModelView{Int64}
+
+        Retrieve a zero-copy safe view of all vessel arrival times.
+        The view ensures the parent Model is not garbage collected while in use.
+        """
+        return () -> begin
+            raw_ptr = ccall((:bollard_model_vessel_arrival_times, libbollard_ffi), Ptr{Int64},
+                (Ptr{Cvoid},), ptr)
+            raw = unsafe_wrap(Array, raw_ptr, num_vessels; own=false)
+            return ModelView(m, raw)
+        end
+
+    elseif s === :latest_departure_times
+        """
+            latest_departure_times() -> ModelView{Int64}
+
+        Retrieve a zero-copy safe view of all vessel departure deadlines.
+        """
+        return () -> begin
+            raw_ptr = ccall((:bollard_model_vessel_latest_departure_times, libbollard_ffi), Ptr{Int64},
+                (Ptr{Cvoid},), ptr)
+            raw = unsafe_wrap(Array, raw_ptr, num_vessels; own=false)
+            return ModelView(m, raw)
+        end
+
+    elseif s === :processing_times
+        """
+            processing_times(vessel_idx::Integer) -> ModelView{Int64}
+
+        Retrieve a zero-copy safe view of the processing times row for a specific vessel.
+        """
+        return (vessel_idx) -> begin
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+
+            raw_ptr = ccall((:bollard_model_vessel_processing_times, libbollard_ffi), Ptr{Int64},
+                (Ptr{Cvoid}, Csize_t), ptr, vessel_idx - 1)
+
+            # The length of this array is num_berths
+            raw = unsafe_wrap(Array, raw_ptr, num_berths; own=false)
+            return ModelView(m, raw)
+        end
+
+    elseif s === :opening_intervals
+        """
+            opening_intervals(berth_idx::Integer) -> ModelView{FfiOpenClosedInterval}
+
+        Retrieve a zero-copy safe view of available (open) time windows for a specific berth.
         """
         return (berth_idx) -> begin
-            @boundscheck 1 <= berth_idx <= m.num_berths || throw(BoundsError(m, berth_idx))
+            @boundscheck 1 <= berth_idx <= num_berths || throw(BoundsError(m, berth_idx))
 
             count = ccall((:bollard_model_num_berth_opening_times, libbollard_ffi), Csize_t,
-                (Ptr{Cvoid}, Csize_t), m.ptr, berth_idx - 1)
+                (Ptr{Cvoid}, Csize_t), ptr, berth_idx - 1)
 
-            intervals = Vector{FfiOpenClosedInterval}(undef, count)
-            for i in 1:count
-                # C indices are 0-based
-                intervals[i] = ccall((:bollard_model_berth_opening_time, libbollard_ffi), FfiOpenClosedInterval,
-                    (Ptr{Cvoid}, Csize_t, Csize_t), m.ptr, berth_idx - 1, i - 1)
-            end
-            return intervals
+            raw_ptr = ccall((:bollard_model_berth_opening_times, libbollard_ffi), Ptr{FfiOpenClosedInterval},
+                (Ptr{Cvoid}, Csize_t), ptr, berth_idx - 1)
+
+            raw = unsafe_wrap(Array, raw_ptr, count; own=false)
+            return ModelView(m, raw)
         end
 
-        # --- Get Closing Intervals ---
-    elseif s === :get_closing_intervals
+    elseif s === :closing_intervals
         """
-            get_closing_intervals(berth_idx::Integer) -> Vector{FfiOpenClosedInterval}
+            closing_intervals(berth_idx::Integer) -> ModelView{FfiOpenClosedInterval}
 
-        Retrieve the list of unavailable (closed/maintenance) time windows for a specific berth.
+        Retrieve a zero-copy safe view of unavailable (closed/maintenance) time windows.
         """
         return (berth_idx) -> begin
-            @boundscheck 1 <= berth_idx <= m.num_berths || throw(BoundsError(m, berth_idx))
+            @boundscheck 1 <= berth_idx <= num_berths || throw(BoundsError(m, berth_idx))
 
             count = ccall((:bollard_model_num_berth_closing_times, libbollard_ffi), Csize_t,
-                (Ptr{Cvoid}, Csize_t), m.ptr, berth_idx - 1)
+                (Ptr{Cvoid}, Csize_t), ptr, berth_idx - 1)
 
-            intervals = Vector{FfiOpenClosedInterval}(undef, count)
-            for i in 1:count
-                # C indices are 0-based
-                intervals[i] = ccall((:bollard_model_berth_closing_time, libbollard_ffi), FfiOpenClosedInterval,
-                    (Ptr{Cvoid}, Csize_t, Csize_t), m.ptr, berth_idx - 1, i - 1)
-            end
-            return intervals
+            raw_ptr = ccall((:bollard_model_berth_closing_times, libbollard_ffi), Ptr{FfiOpenClosedInterval},
+                (Ptr{Cvoid}, Csize_t), ptr, berth_idx - 1)
+
+            raw = unsafe_wrap(Array, raw_ptr, count; own=false)
+            return ModelView(m, raw)
         end
 
-        # --- Is Allowed (Forbidden check) ---
+        # --- Checks and Metrics ---
+
     elseif s === :is_allowed
         """
             is_allowed(vessel_idx::Integer, berth_idx::Integer) -> Bool
@@ -424,15 +499,14 @@ function Base.getproperty(m::Model, s::Symbol)
         Returns `true` if allowed, `false` if forbidden.
         """
         return (vessel_idx, berth_idx) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
-            @boundscheck 1 <= berth_idx <= m.num_berths || throw(BoundsError(m, berth_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= berth_idx <= num_berths || throw(BoundsError(m, berth_idx))
 
             ccall((:bollard_model_vessel_allowed_on_berth, libbollard_ffi), Bool,
                 (Ptr{Cvoid}, Csize_t, Csize_t),
-                m.ptr, vessel_idx - 1, berth_idx - 1)
+                ptr, vessel_idx - 1, berth_idx - 1)
         end
 
-        # --- Is Forbidden (Allowed check) ---
     elseif s === :is_forbidden
         """
             is_forbidden(vessel_idx::Integer, berth_idx::Integer) -> Bool
@@ -441,15 +515,14 @@ function Base.getproperty(m::Model, s::Symbol)
         Returns `true` if forbidden, `false` if allowed.
         """
         return (vessel_idx, berth_idx) -> begin
-            @boundscheck 1 <= vessel_idx <= m.num_vessels || throw(BoundsError(m, vessel_idx))
-            @boundscheck 1 <= berth_idx <= m.num_berths || throw(BoundsError(m, berth_idx))
+            @boundscheck 1 <= vessel_idx <= num_vessels || throw(BoundsError(m, vessel_idx))
+            @boundscheck 1 <= berth_idx <= num_berths || throw(BoundsError(m, berth_idx))
 
             !ccall((:bollard_model_vessel_allowed_on_berth, libbollard_ffi), Bool,
                 (Ptr{Cvoid}, Csize_t, Csize_t),
-                m.ptr, vessel_idx - 1, berth_idx - 1)
+                ptr, vessel_idx - 1, berth_idx - 1)
         end
 
-        # --- Complexity Metric ---
     elseif s === :log_complexity
         """
             log_complexity() -> Float64
@@ -457,7 +530,7 @@ function Base.getproperty(m::Model, s::Symbol)
         Return the base-10 logarithm of the model's estimated complexity.
         Used for heuristics to estimate solution difficulty.
         """
-        return () -> ccall((:bollard_model_model_log_complexity, libbollard_ffi), Float64, (Ptr{Cvoid},), m.ptr)
+        return () -> ccall((:bollard_model_model_log_complexity, libbollard_ffi), Float64, (Ptr{Cvoid},), ptr)
 
     else
         return getfield(m, s)
@@ -473,14 +546,14 @@ end
 
 Return the dimensions of the model as `(num_vessels, num_berths)`.
 """
-Base.size(m::AbstractBollardModel) = (m.num_vessels, m.num_berths)
+Base.size(m::AbstractBollardModel) = (getfield(m, :num_vessels), getfield(m, :num_berths))
 
 """
     Base.length(m::AbstractBollardModel) -> Int
 
 Return the primary dimension of the model, which is the number of vessels.
 """
-Base.length(m::AbstractBollardModel) = m.num_vessels
+Base.length(m::AbstractBollardModel) = getfield(m, :num_vessels)
 
 """
     Base.show(io::IO, m::ModelBuilder)

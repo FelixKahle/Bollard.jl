@@ -22,139 +22,217 @@
 using Bollard
 using Test
 
-@testset "BnbSolver and Outcome Logic" begin
-
-    # --- 1. Helper with Processing Time ---
-    function create_trivial_model()
-        # 1 Berth, 1 Vessel
-        builder = ModelBuilder(1, 1)
-        builder.set_arrival_time!(1, 0)
-        builder.set_latest_departure_time!(1, 100)
-        builder.set_weight!(1, 10)
-
-        # CRITICAL: Set processing time so the problem is feasible
-        builder.set_processing_time!(1, 1, 10)
-
-        return builder.build()
+# =========================================================================
+# Test Helper: Model Fabrication
+# =========================================================================
+function make_valid_model(berths::Int, vessels::Int)
+    builder = ModelBuilder(berths, vessels)
+    # Configure a solvable problem
+    for v in 1:vessels
+        builder.arrival_time!(v, 0)
+        builder.latest_departure_time!(v, 1000)
+        builder.weight!(v, 1)
+        for b in 1:berths
+            # Processing time = 10 * vessel_idx
+            builder.processing_time!(v, b, 10 * v)
+        end
     end
+    return builder.build()
+end
 
-    @testset "Solver Instantiation" begin
-        solver1 = BnbSolver()
-        @test solver1.ptr != C_NULL
+@testset "Bollard BnB Solver Test Suite" begin
 
-        solver2 = BnbSolver(5, 10)
-        @test solver2.ptr != C_NULL
+    # =========================================================================
+    # 1. Enums & Data Structures
+    # =========================================================================
+    @testset "Enums & Data Structures" begin
+        @testset "Enum Integer Mapping" begin
+            # BnbDecisionBuilderType
+            @test Int(Bollard.ChronologicalExhaustive) == 0
+            @test Int(Bollard.EarliestDeadlineFirst) == 7
 
-        @test solver1 !== solver2
-    end
+            # BnbObjectiveEvaluatorType
+            @test Int(Bollard.EvaluatorHybrid) == 0
+            @test Int(Bollard.EvaluatorWeightedFlowTime) == 2
 
-    @testset "Strategy Dispatch & Invalid Arguments" begin
-        model = create_trivial_model()
-        solver = BnbSolver()
-
-        # Should be Optimal now that processing time is set
-        outcome = solve(model, solver, evaluator=:Hybrid, heuristic=:Regret)
-
-        # CHANGED: Updated struct name from SolverOutcome to BnbSolverOutcome
-        @test outcome isa BnbSolverOutcome
-        @test outcome.status == Bollard.StatusOptimal
-
-        @test_throws ArgumentError solve(model, solver, evaluator=:InvalidEval)
-        @test_throws ArgumentError solve(model, solver, heuristic=:InvalidHeur)
-    end
-
-    @testset "Outcome Inspection" begin
-        model = create_trivial_model()
-        solver = BnbSolver()
-        outcome = solve(model, solver)
-
-        # CHANGED: Updated enum types
-        @test outcome.status isa Bollard.BnbSolverStatus
-        @test outcome.termination_reason isa Bollard.BnbTerminationReason
-
-        # Should be Optimal
-        @test outcome.status == Bollard.StatusOptimal
-        @test outcome.is_optimal == true
-        @test outcome.has_solution == true
-
-        @test outcome.nodes_explored isa UInt64
-        @test outcome.time_ms isa UInt64
-    end
-
-    @testset "Solution Extraction" begin
-        # 2 Berths, 2 Vessels
-        builder = ModelBuilder(2, 2)
-
-        # Vessel 1
-        builder.set_arrival_time!(1, 0)
-        builder.set_latest_departure_time!(1, 100)
-        builder.set_weight!(1, 10)
-        # Set processing times for Vessel 1
-        builder.set_processing_time!(1, 1, 10)
-        builder.set_processing_time!(1, 2, 10)
-
-        # Vessel 2
-        builder.set_arrival_time!(2, 0)
-        builder.set_latest_departure_time!(2, 100)
-        builder.set_weight!(2, 20)
-        # Set processing times for Vessel 2
-        builder.set_processing_time!(2, 1, 10)
-        builder.set_processing_time!(2, 2, 10)
-
-        model = builder.build()
-        solver = BnbSolver()
-        outcome = solve(model, solver)
-
-        @test outcome.has_solution
-        berths, start_times = outcome.solution
-
-        @test length(berths) == 2
-        @test length(start_times) == 2
-        @test all(b -> b in [1, 2], berths)
-    end
-
-    @testset "Fixed Assignments" begin
-        # 2 Berths, 1 Vessel
-        builder = ModelBuilder(2, 1)
-        builder.set_arrival_time!(1, 0)
-        builder.set_latest_departure_time!(1, 50)
-        builder.set_weight!(1, 10)
-
-        # CRITICAL: Processing times must be set for ALL options to ensure feasibility
-        builder.set_processing_time!(1, 1, 10)
-        builder.set_processing_time!(1, 2, 10)
-
-        model = builder.build()
-        solver = BnbSolver()
-
-        # Force Vessel 1 to Berth 2 at time 5
-        fixed = [FixedAssignment(1, 2, 5)]
-
-        # We use the default heuristic (Regret) to prove it works
-        outcome = solve(model, solver, fixed_assignments=fixed)
-
-        if !outcome.has_solution
-            @error "Fixed Assignment Solver Status: $(outcome.status)"
+            # BnbTerminationReason
+            @test Int(Bollard.BnbOptimalityProven) == 0
+            @test Int(Bollard.BnbAborted) == 2
         end
 
-        @test outcome.has_solution
+        @testset "FixedAssignment Conversion" begin
+            # High-level (1-based indexing)
+            high = Bollard.BnbFixedAssignment(10, 5, 100) # Vessel 10, Berth 5
 
-        berths, start_times = outcome.solution
-        @test berths[1] == 2
-        @test start_times[1] == 5
+            # Low-level conversion (0-based indexing)
+            low = convert(Bollard.FfiBnbFixedAssignment, high)
+
+            @test low isa Bollard.FfiBnbFixedAssignment
+            @test low.start_time == 100
+            @test low.vessel_index == 9 # 10 - 1
+            @test low.berth_index == 4  # 5 - 1
+        end
     end
 
-    @testset "Memory Safety (Stress Test)" begin
-        function stress_solve()
-            for _ in 1:50
-                m = create_trivial_model()
+    # =========================================================================
+    # 2. Solver Lifecycle
+    # =========================================================================
+    @testset "Solver Lifecycle" begin
+        @testset "Default Constructor" begin
+            solver = BnbSolver()
+            @test solver.ptr != C_NULL
+            @test contains(repr(solver), "Ready")
+            # Finalizer runs automatically at block end or GC
+        end
+
+        @testset "Model-Based Constructor" begin
+            model = make_valid_model(1, 1)
+            solver = BnbSolver(model)
+            @test solver.ptr != C_NULL
+        end
+
+        @testset "Invalid Input Safety" begin
+            # Ensure we catch null pointer models if user tries to pass one manually
+            # (Simulated by consuming a builder and passing a freed object if accessible)
+            # Since Model prevents access after free, we assume Model wrapper safety here.
+        end
+    end
+
+    # =========================================================================
+    # 3. Integration: Solving
+    # =========================================================================
+    @testset "Integration: Solving" begin
+
+        @testset "Basic Solve (Optimality Proven)" begin
+            # 1 Vessel, 1 Berth. Trivial.
+            model = make_valid_model(1, 1)
+            solver = BnbSolver()
+
+            # UPDATED SYNTAX: solve(solver, model)
+            outcome = Bollard.solve(solver, model)
+
+            @test outcome isa Bollard.BnbOutcome
+            @test outcome.termination.reason == Bollard.BnbOptimalityProven
+            @test outcome.result.has_solution == true
+
+            # Check solution details
+            sol = outcome.result.solution
+            @test sol.num_vessels == 1
+            @test sol.berth(1) == 1
+        end
+
+        @testset "Solve with Fixed Assignments" begin
+            # 2 Vessels, 2 Berths. 
+            # V1 can go to B1 or B2. We force V1 -> B2.
+            builder = ModelBuilder(2, 2)
+
+            # Setup feasible windows
+            builder.arrival_time!(1, 0)
+            builder.latest_departure_time!(1, 100)
+            builder.arrival_time!(2, 0)
+            builder.latest_departure_time!(2, 100)
+            builder.weight!(1, 1)
+            builder.weight!(2, 1)
+
+            # Processing times
+            builder.processing_time!(1, 1, 10)
+            builder.processing_time!(1, 2, 10)
+            builder.processing_time!(2, 1, 10)
+            builder.processing_time!(2, 2, 10)
+
+            model = builder.build()
+            solver = BnbSolver()
+
+            # Force Vessel 1 to Berth 2 starting at time 0
+            fixed_move = Bollard.BnbFixedAssignment(1, 2, 0)
+
+            # UPDATED SYNTAX: solve(solver, model, ...)
+            outcome = Bollard.solve(solver, model, fixed=[fixed_move])
+
+            @test outcome.result.has_solution
+            sol = outcome.result.solution
+
+            # Verify the constraint was respected
+            @test sol.berth(1) == 2
+            @test sol.start_time(1) == 0
+        end
+
+        @testset "Heuristics and Limits" begin
+            model = make_valid_model(2, 5) # Slightly larger
+            solver = BnbSolver()
+
+            # Test configuration passing
+            outcome = Bollard.solve(solver, model;
+                builder=Bollard.EarliestDeadlineFirst,
+                evaluator=Bollard.EvaluatorWorkload,
+                solution_limit=1, # Stop after 1 solution
+                enable_log=false
+            )
+
+            # It might find optimal immediately or abort depending on solver logic for limit=1
+            @test outcome.result.has_solution
+            @test outcome.statistics.solutions_found >= 1
+        end
+    end
+
+    # =========================================================================
+    # 4. Outcome & Statistics Access
+    # =========================================================================
+    @testset "Outcome & Statistics Access" begin
+        model = make_valid_model(1, 1)
+        solver = BnbSolver()
+        outcome = Bollard.solve(solver, model)
+
+        stats = outcome.statistics
+        @test stats.nodes_explored >= 0
+        @test stats.time_total_ms >= 0
+        @test stats.max_depth >= 0
+
+        term = outcome.termination
+        @test term.message isa String
+        @test !isempty(term.message)
+
+        # Verify printing
+        io = IOBuffer()
+        show(io, stats)
+        @test contains(String(take!(io)), "BnbStatistics")
+
+        io = IOBuffer()
+        show(io, term)
+        @test contains(String(take!(io)), "BnbTermination")
+    end
+
+    # =========================================================================
+    # 5. Memory Safety & GC Stress
+    # =========================================================================
+    @testset "Memory Safety & GC Stress" begin
+
+        @testset "Outcome Children Survival" begin
+            # Verify that accessing children (stats, termination) is safe
+            # even if we don't hold the Outcome variable explicitly.
+            function get_stats_node_count()
+                m = make_valid_model(1, 1)
                 s = BnbSolver()
-                o = solve(m, s)
-                stat = o.status
+                o = Bollard.solve(s, m)
+                return o.statistics.nodes_explored
             end
+
+            count = get_stats_node_count()
+            GC.gc()
+            @test count >= 0
         end
-        stress_solve()
-        GC.gc()
-        @test true
+
+        @testset "Solver GC Stress" begin
+            model = make_valid_model(1, 1)
+            function churn()
+                for _ in 1:100
+                    s = BnbSolver()
+                    Bollard.solve(s, model; solution_limit=1)
+                end
+            end
+            churn()
+            GC.gc()
+            @test true # Passed without segfault
+        end
     end
 end
