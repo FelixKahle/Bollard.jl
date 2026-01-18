@@ -406,6 +406,7 @@ Solve the optimization problem defined by `model` using the provided `solver`.
 - `solution_limit::Int`: Stop after finding N solutions (0 = no limit).
 - `time_limit_ms::Int`: Stop after N milliseconds (0 = no limit).
 - `enable_log::Bool`: Print search logs to stdout (default: `false`).
+- `initial_solution::Union{Solution, Nothing}`: An optional existing solution to warm-start the search.
 - `fixed::Vector{BnbFixedAssignment}`: Force specific assignments (default: empty).
 """
 function solve(
@@ -416,6 +417,7 @@ function solve(
     solution_limit::Integer=0,
     time_limit_ms::Integer=0,
     enable_log::Bool=false,
+    initial_solution::Union{Solution,Nothing}=nothing,
     fixed::Vector{BnbFixedAssignment}=BnbFixedAssignment[]
 )
     solver_ptr = getfield(solver, :ptr)
@@ -424,25 +426,64 @@ function solve(
     solver_ptr == C_NULL && error("cannot use freed BnbSolver")
     model_ptr == C_NULL && error("cannot solve invalidated Model")
 
-    if isempty(fixed)
-        raw_outcome = ccall((:bollard_bnb_solver_solve, libbollard_ffi), Ptr{Cvoid},
-            (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool),
-            solver_ptr, model_ptr,
-            builder, evaluator,
-            solution_limit, time_limit_ms, enable_log
-        )
-        return BnbOutcome(raw_outcome)
-    else
-        ffi_fixed = [convert(FfiBnbFixedAssignment, f) for f in fixed]
+    # Helper to convert Julia fixed assignments to FFI structs
+    convert_fixed = (f_list) -> begin
+        ffi_fixed = [convert(FfiBnbFixedAssignment, f) for f in f_list]
+        return (ffi_fixed, length(ffi_fixed))
+    end
 
-        raw_outcome = ccall((:bollard_bnb_solver_solve_with_fixed_assignments, libbollard_ffi), Ptr{Cvoid},
-            (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{FfiBnbFixedAssignment}, Csize_t),
-            solver_ptr, model_ptr,
-            builder, evaluator,
-            solution_limit, time_limit_ms, enable_log,
-            ffi_fixed, length(ffi_fixed)
-        )
-        return BnbOutcome(raw_outcome)
+    # --- Case 1: Standard Solve (No Initial Solution) ---
+    if initial_solution === nothing
+        if isempty(fixed)
+            # 1a. Basic Solve
+            raw_outcome = ccall((:bollard_bnb_solver_solve, libbollard_ffi), Ptr{Cvoid},
+                (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool),
+                solver_ptr, model_ptr,
+                builder, evaluator,
+                solution_limit, time_limit_ms, enable_log
+            )
+            return BnbOutcome(raw_outcome)
+        else
+            # 1b. Solve with Fixed Assignments
+            ffi_fixed, fixed_len = convert_fixed(fixed)
+            raw_outcome = ccall((:bollard_bnb_solver_solve_with_fixed_assignments, libbollard_ffi), Ptr{Cvoid},
+                (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{FfiBnbFixedAssignment}, Csize_t),
+                solver_ptr, model_ptr,
+                builder, evaluator,
+                solution_limit, time_limit_ms, enable_log,
+                ffi_fixed, fixed_len
+            )
+            return BnbOutcome(raw_outcome)
+        end
+
+        # --- Case 2: Warm Start (With Initial Solution) ---
+    else
+        init_sol_ptr = getfield(initial_solution, :ptr)
+        init_sol_ptr == C_NULL && error("cannot use freed Solution as initial_solution")
+
+        if isempty(fixed)
+            # 2a. Solve with Initial Solution only
+            raw_outcome = ccall((:bollard_bnb_solver_solve_with_initial_solution, libbollard_ffi), Ptr{Cvoid},
+                (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{Cvoid}),
+                solver_ptr, model_ptr,
+                builder, evaluator,
+                solution_limit, time_limit_ms, enable_log,
+                init_sol_ptr
+            )
+            return BnbOutcome(raw_outcome)
+        else
+            # 2b. Solve with Initial Solution AND Fixed Assignments
+            ffi_fixed, fixed_len = convert_fixed(fixed)
+            raw_outcome = ccall((:bollard_bnb_solver_solve_with_initial_solution_and_fixed_assignments, libbollard_ffi), Ptr{Cvoid},
+                (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{Cvoid}, Ptr{FfiBnbFixedAssignment}, Csize_t),
+                solver_ptr, model_ptr,
+                builder, evaluator,
+                solution_limit, time_limit_ms, enable_log,
+                init_sol_ptr,
+                ffi_fixed, fixed_len
+            )
+            return BnbOutcome(raw_outcome)
+        end
     end
 end
 
