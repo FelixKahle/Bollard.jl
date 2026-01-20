@@ -42,9 +42,39 @@ import Base: show, size, length, getproperty, propertynames
 using Artifacts
 using Libdl
 
+# Model Definition
 export ModelBuilder, Model, FfiOpenClosedInterval
-export BnbSolver, BnbSolverOutcome, FixedAssignment
-export BnbSolverStatus, BnbTerminationReason
+
+# Solution & Views
+export Solution, SolutionView
+
+# Results & Status Codes
+export SolverResult, Termination, SolverStatus, TerminationReason
+export StatusOptimal, StatusFeasible, StatusInfeasible, StatusUnknown
+export ReasonOptimalityProven, ReasonInfeasibilityProven, ReasonConverged, ReasonAborted
+
+# BnB Solver
+export BnbDecisionBuilderType, BnbObjectiveEvaluatorType, BnbFixedAssignment
+export BnbTermination, BnbStatistics, BnbOutcome, BnbSolver
+
+# Local Search (LS) Solver
+export LSTerminationReason, LSLocalOptimum, LSMetaheuristic, LSAborted
+export LSTermination, LSStatistics, LSOutcome, LSSolver
+
+# LS Abstract Types
+export AbstractLSOperator, AbstractLSNeighborhood, AbstractLSMetaheuristic
+
+# LS Operators
+export SwapOperator, ShiftOperator, TwoOptOperator, ScrambleOperator
+export RoundRobinOperator, RandomCompoundOperator, MultiArmedBanditOperator
+
+# LS Neighborhoods
+export FullNeighborhood, StaticTopologyNeighborhood
+
+# LS Metaheuristics
+export GreedyDescent, SimulatedAnnealing, GuidedLocalSearch, TabuSearch
+
+# Common Functions
 export solve
 
 global libbollard_ffi = ""
@@ -52,17 +82,14 @@ global libbollard_ffi = ""
 function __init__()
     if haskey(ENV, "BOLLARD_FFI_LIB")
         build_dir = ENV["BOLLARD_FFI_LIB"]
-
         file_name = if Sys.iswindows()
             "bollard_ffi.dll"
         else
             "libbollard_ffi.$(Libdl.dlext)"
         end
-
         global libbollard_ffi = joinpath(build_dir, file_name)
     else
         root = artifact"bollard_ffi"
-
         global libbollard_ffi = if Sys.iswindows()
             joinpath(root, "bin", "bollard_ffi.dll")
         else
@@ -75,7 +102,12 @@ function __init__()
     end
 end
 
-include("model.jl")
-include("bnb.jl")
+# Note that the order of includes matters due to dependencies between types.
+
+include("model.jl")    # Defines Model
+include("solution.jl") # Defines Solution (needed by Result)
+include("result.jl")   # Defines SolverResult (wraps Solution)
+include("bnb.jl")      # Defines BnbSolver
+include("ls.jl")       # Defines LSSolver and LS components
 
 end # module Bollard
