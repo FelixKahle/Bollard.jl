@@ -294,27 +294,32 @@ mutable struct BnbOutcome
     function BnbOutcome(ptr::Ptr{Cvoid})
         ptr == C_NULL && error("cannot wrap null BnbOutcome pointer")
 
-        raw_term = ccall((:bollard_bnb_outcome_termination, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
-        raw_res = ccall((:bollard_bnb_outcome_result, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
-        raw_stats = ccall((:bollard_bnb_outcome_statistics, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
+        try
+            raw_term = ccall((:bollard_bnb_outcome_termination, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
+            raw_res = ccall((:bollard_bnb_outcome_result, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
+            raw_stats = ccall((:bollard_bnb_outcome_statistics, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
 
 
-        term_obj = BnbTermination(raw_term)
-        res_obj = SolverResult(raw_res)
-        stats_obj = BnbStatistics(raw_stats)
+            term_obj = BnbTermination(raw_term)
+            res_obj = SolverResult(raw_res)
+            stats_obj = BnbStatistics(raw_stats)
 
-        instance = new(ptr, term_obj, res_obj, stats_obj)
+            instance = new(ptr, term_obj, res_obj, stats_obj)
 
-        finalizer(instance) do x
-            ptr_to_free = x.ptr
-            x.ptr = C_NULL
-            if ptr_to_free != C_NULL
-                # This frees the Outcome struct itself, but NOT the inner pointers (term, result, stats).
-                # The inner pointers are freed by the finalizers of the fields `termination`, `result`, and `statistics`.
-                ccall((:bollard_bnb_outcome_free, libbollard_ffi), Cvoid, (Ptr{Cvoid},), ptr_to_free)
+            finalizer(instance) do x
+                ptr_to_free = x.ptr
+                x.ptr = C_NULL
+                if ptr_to_free != C_NULL
+                    # This frees the Outcome struct itself, but NOT the inner pointers (term, result, stats).
+                    # The inner pointers are freed by the finalizers of the fields `termination`, `result`, and `statistics`.
+                    ccall((:bollard_bnb_outcome_free, libbollard_ffi), Cvoid, (Ptr{Cvoid},), ptr_to_free)
+                end
             end
+            return instance
+        catch
+            ccall((:bollard_bnb_outcome_free, libbollard_ffi), Cvoid, (Ptr{Cvoid},), ptr)
+            rethrow(e)
         end
-        return instance
     end
 end
 
@@ -432,64 +437,64 @@ function solve(
         return (ffi_fixed, length(ffi_fixed))
     end
 
-    # --- Case 1: Standard Solve (No Initial Solution) ---
-    if initial_solution === nothing
-        if isempty(fixed)
-            # 1a. Basic Solve
-            raw_outcome = ccall((:bollard_bnb_solver_solve, libbollard_ffi), Ptr{Cvoid},
-                (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool),
-                solver_ptr, model_ptr,
-                builder, evaluator,
-                solution_limit, time_limit_ms, enable_log
-            )
-            return BnbOutcome(raw_outcome)
-        else
-            # 1b. Solve with Fixed Assignments
-            ffi_fixed, fixed_len = convert_fixed(fixed)
-            raw_outcome = ccall((:bollard_bnb_solver_solve_with_fixed_assignments, libbollard_ffi), Ptr{Cvoid},
-                (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{FfiBnbFixedAssignment}, Csize_t),
-                solver_ptr, model_ptr,
-                builder, evaluator,
-                solution_limit, time_limit_ms, enable_log,
-                ffi_fixed, fixed_len
-            )
-            return BnbOutcome(raw_outcome)
-        end
+    GC.@preserve solver model initial_solution begin
 
-        # --- Case 2: Warm Start (With Initial Solution) ---
-    else
-        init_sol_ptr = getfield(initial_solution, :ptr)
-        init_sol_ptr == C_NULL && error("cannot use freed Solution as initial_solution")
+        # --- Case 1: Standard Solve (No Initial Solution) ---
+        if initial_solution === nothing
+            if isempty(fixed)
+                # 1a. Basic Solve
+                raw_outcome = ccall((:bollard_bnb_solver_solve, libbollard_ffi), Ptr{Cvoid},
+                    (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool),
+                    solver_ptr, model_ptr,
+                    builder, evaluator,
+                    solution_limit, time_limit_ms, enable_log
+                )
+                return BnbOutcome(raw_outcome)
+            else
+                # 1b. Solve with Fixed Assignments
+                ffi_fixed, fixed_len = convert_fixed(fixed)
+                raw_outcome = ccall((:bollard_bnb_solver_solve_with_fixed_assignments, libbollard_ffi), Ptr{Cvoid},
+                    (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{FfiBnbFixedAssignment}, Csize_t),
+                    solver_ptr, model_ptr,
+                    builder, evaluator,
+                    solution_limit, time_limit_ms, enable_log,
+                    ffi_fixed, fixed_len
+                )
+                return BnbOutcome(raw_outcome)
+            end
 
-        if isempty(fixed)
-            # 2a. Solve with Initial Solution only
-            raw_outcome = ccall((:bollard_bnb_solver_solve_with_initial_solution, libbollard_ffi), Ptr{Cvoid},
-                (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{Cvoid}),
-                solver_ptr, model_ptr,
-                builder, evaluator,
-                solution_limit, time_limit_ms, enable_log,
-                init_sol_ptr
-            )
-            return BnbOutcome(raw_outcome)
+            # --- Case 2: Warm Start (With Initial Solution) ---
         else
-            # 2b. Solve with Initial Solution AND Fixed Assignments
-            ffi_fixed, fixed_len = convert_fixed(fixed)
-            raw_outcome = ccall((:bollard_bnb_solver_solve_with_initial_solution_and_fixed_assignments, libbollard_ffi), Ptr{Cvoid},
-                (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{Cvoid}, Ptr{FfiBnbFixedAssignment}, Csize_t),
-                solver_ptr, model_ptr,
-                builder, evaluator,
-                solution_limit, time_limit_ms, enable_log,
-                init_sol_ptr,
-                ffi_fixed, fixed_len
-            )
-            return BnbOutcome(raw_outcome)
+            init_sol_ptr = getfield(initial_solution, :ptr)
+            init_sol_ptr == C_NULL && error("cannot use freed Solution as initial_solution")
+
+            if isempty(fixed)
+                # 2a. Solve with Initial Solution only
+                raw_outcome = ccall((:bollard_bnb_solver_solve_with_initial_solution, libbollard_ffi), Ptr{Cvoid},
+                    (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{Cvoid}),
+                    solver_ptr, model_ptr,
+                    builder, evaluator,
+                    solution_limit, time_limit_ms, enable_log,
+                    init_sol_ptr
+                )
+                return BnbOutcome(raw_outcome)
+            else
+                # 2b. Solve with Initial Solution AND Fixed Assignments
+                ffi_fixed, fixed_len = convert_fixed(fixed)
+                raw_outcome = ccall((:bollard_bnb_solver_solve_with_initial_solution_and_fixed_assignments, libbollard_ffi), Ptr{Cvoid},
+                    (Ptr{Cvoid}, Ptr{Cvoid}, Int32, Int32, Csize_t, Int64, Bool, Ptr{Cvoid}, Ptr{FfiBnbFixedAssignment}, Csize_t),
+                    solver_ptr, model_ptr,
+                    builder, evaluator,
+                    solution_limit, time_limit_ms, enable_log,
+                    init_sol_ptr,
+                    ffi_fixed, fixed_len
+                )
+                return BnbOutcome(raw_outcome)
+            end
         end
     end
 end
 
 function Base.show(io::IO, s::BnbSolver)
-    ptr = getfield(s, :ptr)
-    @assert ptr != C_NULL "accessing freed BnbSolver object"
-
     print(io, "BnbSolver")
 end

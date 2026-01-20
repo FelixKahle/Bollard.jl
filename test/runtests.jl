@@ -29,4 +29,5 @@ using Test
     include("solution_tests.jl")
     include("result_tests.jl")
     include("bnb_tests.jl")
+    include("ls_tests.jl")
 end

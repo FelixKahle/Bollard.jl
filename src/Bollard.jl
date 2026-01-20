@@ -54,9 +54,28 @@ export StatusOptimal, StatusFeasible, StatusInfeasible, StatusUnknown
 export ReasonOptimalityProven, ReasonInfeasibilityProven, ReasonConverged, ReasonAborted
 
 # BnB Solver
-# BnB Solver Types
 export BnbDecisionBuilderType, BnbObjectiveEvaluatorType, BnbFixedAssignment
-export BnbTermination, BnbStatistics, BnbOutcome, BnbSolver, solve
+export BnbTermination, BnbStatistics, BnbOutcome, BnbSolver
+
+# Local Search (LS) Solver
+export LSTerminationReason, LSLocalOptimum, LSMetaheuristic, LSAborted
+export LSTermination, LSStatistics, LSOutcome, LSSolver
+
+# LS Abstract Types
+export AbstractLSOperator, AbstractLSNeighborhood, AbstractLSMetaheuristic
+
+# LS Operators
+export SwapOperator, ShiftOperator, TwoOptOperator, ScrambleOperator
+export RoundRobinOperator, RandomCompoundOperator, MultiArmedBanditOperator
+
+# LS Neighborhoods
+export FullNeighborhood, StaticTopologyNeighborhood
+
+# LS Metaheuristics
+export GreedyDescent, SimulatedAnnealing, GuidedLocalSearch, TabuSearch
+
+# Common Functions
+export solve
 
 global libbollard_ffi = ""
 
@@ -88,6 +107,7 @@ end
 include("model.jl")    # Defines Model
 include("solution.jl") # Defines Solution (needed by Result)
 include("result.jl")   # Defines SolverResult (wraps Solution)
-include("bnb.jl")      # Defines BnbSolver and related types
+include("bnb.jl")      # Defines BnbSolver
+include("ls.jl")       # Defines LSSolver and LS components
 
 end # module Bollard
