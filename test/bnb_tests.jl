@@ -59,12 +59,12 @@ end
     @testset "Enums & Data Structures" begin
         @testset "Enum Integer Mapping" begin
             # BnbDecisionBuilderType
-            @test Int(Bollard.ChronologicalExhaustive) == 0
-            @test Int(Bollard.EarliestDeadlineFirst) == 7
+            @test Int(Bollard.Chronological) == 0
+            @test Int(Bollard.EdfHeuristic) == 7
 
             # BnbObjectiveEvaluatorType
             @test Int(Bollard.EvaluatorHybrid) == 0
-            @test Int(Bollard.EvaluatorWeightedFlowTime) == 2
+            @test Int(Bollard.EvaluatorWeightedCompletionTime) == 2
 
             # BnbTerminationReason
             @test Int(Bollard.BnbOptimalityProven) == 0
@@ -199,7 +199,7 @@ end
             solver = BnbSolver()
 
             outcome = Bollard.solve(solver, model;
-                builder=Bollard.EarliestDeadlineFirst,
+                builder=Bollard.EdfHeuristic,
                 evaluator=Bollard.EvaluatorWorkload,
                 solution_limit=1,
                 time_limit_ms=5000,

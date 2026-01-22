@@ -31,24 +31,25 @@
 Determines the branching strategy used by the Branch-and-Bound solver.
 
 # Values
-- `ChronologicalExhaustive (0)`: Branch based on time (exhaustive search).
-- `FcfsHeuristic (1)`: First-Come, First-Served heuristic ordering.
-- `RegretHeuristic (2)`: Regret-based heuristic.
-- `SlackHeuristic (3)`: Slack time-based heuristic.
-- `WsptHeuristic (4)`: Weighted Shortest Processing Time.
-- `SptHeuristic (5)`: Shortest Processing Time.
-- `LptHeuristic (6)`: Longest Processing Time.
-- `EarliestDeadlineFirst (7)`: EDF ordering.
+- `Chronological (0)`: Branch based on time (exhaustive search).
+- `Fcfs (1)`: First-Come, First-Served heuristic ordering.
+- `Regret (2)`: Regret-based heuristic.
+- `Slack (3)`: Slack time-based heuristic.
+- `Wspt (4)`: Weighted Shortest Processing Time.
+- `Spt (5)`: Shortest Processing Time.
+- `Lpt (6)`: Longest Processing Time.
+- `EdfHeuristic (7)`: EDF ordering.
 """
 @enum BnbDecisionBuilderType::Int32 begin
-    ChronologicalExhaustive = 0
-    FcfsHeuristic = 1
-    RegretHeuristic = 2
-    SlackHeuristic = 3
-    WsptHeuristic = 4
-    SptHeuristic = 5
-    LptHeuristic = 6
-    EarliestDeadlineFirst = 7
+    Chronological = 0
+    Fcfs = 1
+    Regret = 2
+    Slack = 3
+    Wspt = 4
+    Spt = 5
+    Lpt = 6
+    EdfHeuristic = 7
+    UrgencyRegretHeuristic = 8
 end
 
 """
@@ -59,12 +60,12 @@ Determines how the objective function is evaluated (lower bound calculation) dur
 # Values
 - `EvaluatorHybrid (0)`: Combination of strategies.
 - `EvaluatorWorkload (1)`: Based on remaining workload.
-- `EvaluatorWeightedFlowTime (2)`: Based on flow time.
+- `EvaluatorWeightedCompletionTime (2)`: Based on completion time.
 """
 @enum BnbObjectiveEvaluatorType::Int32 begin
     EvaluatorHybrid = 0
     EvaluatorWorkload = 1
-    EvaluatorWeightedFlowTime = 2
+    EvaluatorWeightedCompletionTime = 2
 end
 
 """
@@ -316,7 +317,7 @@ mutable struct BnbOutcome
                 end
             end
             return instance
-        catch
+        catch e
             ccall((:bollard_bnb_outcome_free, libbollard_ffi), Cvoid, (Ptr{Cvoid},), ptr)
             rethrow(e)
         end
@@ -406,7 +407,7 @@ end
 Solve the optimization problem defined by `model` using the provided `solver`.
 
 # Keywords
-- `builder::BnbDecisionBuilderType`: Branching strategy (default: `ChronologicalExhaustive`).
+- `builder::BnbDecisionBuilderType`: Branching strategy (default: `Chronological`).
 - `evaluator::BnbObjectiveEvaluatorType`: Lower-bound strategy (default: `EvaluatorHybrid`).
 - `solution_limit::Int`: Stop after finding N solutions (0 = no limit).
 - `time_limit_ms::Int`: Stop after N milliseconds (0 = no limit).
@@ -417,7 +418,7 @@ Solve the optimization problem defined by `model` using the provided `solver`.
 function solve(
     solver::BnbSolver,
     model::Model;
-    builder::BnbDecisionBuilderType=ChronologicalExhaustive,
+    builder::BnbDecisionBuilderType=Chronological,
     evaluator::BnbObjectiveEvaluatorType=EvaluatorHybrid,
     solution_limit::Integer=0,
     time_limit_ms::Integer=0,
