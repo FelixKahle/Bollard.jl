@@ -121,7 +121,7 @@ Return the list of properties (methods) available on a `Solution` instance.
 """
 function Base.propertynames(::Solution)
     return (:objective, :berth, :start_time,
-        :berths, :start_times, :num_vessels)
+        :berths, :start_times, :weighted_total_flow_time, :num_vessels)
 end
 
 """
@@ -179,6 +179,23 @@ function Base.getproperty(s::Solution, sym::Symbol)
 
             ccall((:bollard_solution_start_time, libbollard_ffi), Int64,
                 (Ptr{Cvoid}, Csize_t), ptr, vessel_idx - 1)
+        end
+
+        # --- Weighted Total Flow Time ---
+    elseif sym === :weighted_total_flow_time
+        """
+            weighted_total_flow_time(model::Model) -> Int64
+
+        Calculate the weighted total flow time of the solution given a model.
+        Flow time is the time from arrival to completion for each vessel.
+        """
+        return (model::Model) -> begin
+            ptr == C_NULL && error("accessing method on freed Solution")
+            model_ptr = getfield(model, :ptr)
+            model_ptr == C_NULL && error("cannot use invalidated Model")
+
+            ccall((:bollard_solution_weighted_total_flow_time, libbollard_ffi), Int64,
+                (Ptr{Cvoid}, Ptr{Cvoid}), ptr, model_ptr)
         end
 
         # --- Safe Zero-Copy Views ---

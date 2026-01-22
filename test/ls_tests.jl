@@ -100,6 +100,104 @@ end
             @test cp.ptr != scramble_det.ptr
         end
 
+        @testset "Operator Copying" begin
+            # Test basic operators
+            @testset "Basic Operators" begin
+                swap1 = SwapOperator()
+                swap2 = copy(swap1)
+                @test swap2 isa SwapOperator
+                @test swap1.ptr != C_NULL
+                @test swap2.ptr != C_NULL
+                @test swap1.ptr != swap2.ptr
+
+                shift1 = ShiftOperator()
+                shift2 = copy(shift1)
+                @test shift2 isa ShiftOperator
+                @test shift1.ptr != shift2.ptr
+
+                twoopt1 = TwoOptOperator()
+                twoopt2 = copy(twoopt1)
+                @test twoopt2 isa TwoOptOperator
+                @test twoopt1.ptr != twoopt2.ptr
+            end
+
+            @testset "ScrambleOperator Seed Preservation" begin
+                # Random seed version
+                scramble_rand = ScrambleOperator()
+                scramble_rand_copy = copy(scramble_rand)
+                @test scramble_rand.seed === nothing
+                @test scramble_rand_copy.seed === nothing
+                @test scramble_rand.ptr != scramble_rand_copy.ptr
+
+                # Deterministic seed version
+                scramble_det = ScrambleOperator(UInt64(42))
+                scramble_det_copy = copy(scramble_det)
+                @test scramble_det.seed == UInt64(42)
+                @test scramble_det_copy.seed == UInt64(42)
+                @test scramble_det.ptr != scramble_det_copy.ptr
+            end
+
+            @testset "Compound Operator Copying" begin
+                base_ops = [SwapOperator(), ShiftOperator(), TwoOptOperator()]
+
+                # RoundRobinOperator
+                rr1 = RoundRobinOperator(base_ops)
+                rr2 = copy(rr1)
+                @test rr2 isa RoundRobinOperator
+                @test rr1.ptr != rr2.ptr
+                @test rr1.ptr != C_NULL
+                @test rr2.ptr != C_NULL
+                @test length(rr1.operators) == length(rr2.operators)
+
+                # RandomCompoundOperator
+                rc1 = RandomCompoundOperator(base_ops)
+                rc2 = copy(rc1)
+                @test rc2 isa RandomCompoundOperator
+                @test rc1.ptr != rc2.ptr
+                @test length(rc1.operators) == length(rc2.operators)
+
+                # MultiArmedBanditOperator
+                mab1 = MultiArmedBanditOperator(base_ops; memory_coeff=0.7, exploration_coeff=1.5)
+                mab2 = copy(mab1)
+                @test mab2 isa MultiArmedBanditOperator
+                @test mab1.ptr != mab2.ptr
+                @test mab1.memory_coeff == mab2.memory_coeff == 0.7
+                @test mab1.exploration_coeff == mab2.exploration_coeff == 1.5
+                @test length(mab1.operators) == length(mab2.operators)
+            end
+
+            @testset "Copied Operators Are Functional" begin
+                # Verify copied operators actually work in solve calls
+                (model, sol) = make_simple_model_and_solution(2, 3)
+                solver = LSSolver()
+
+                original_op = ShiftOperator()
+                copied_op = copy(original_op)
+
+                # Use original
+                res1 = Bollard.solve(solver, model, sol;
+                    neighborhood=FullNeighborhood(model),
+                    metaheuristic=GreedyDescent(),
+                    operator=original_op,
+                    solution_limit=5
+                )
+                @test res1.statistics.iterations >= 0
+
+                # Use copy
+                res2 = Bollard.solve(solver, model, sol;
+                    neighborhood=FullNeighborhood(model),
+                    metaheuristic=GreedyDescent(),
+                    operator=copied_op,
+                    solution_limit=5
+                )
+                @test res2.statistics.iterations >= 0
+
+                # Both should still be valid
+                @test original_op.ptr != C_NULL
+                @test copied_op.ptr != C_NULL
+            end
+        end
+
         @testset "Compound Operators" begin
             ops = [SwapOperator(), ShiftOperator()]
 

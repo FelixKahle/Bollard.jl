@@ -174,24 +174,29 @@ mutable struct LSOutcome
     function LSOutcome(ptr::Ptr{Cvoid})
         ptr == C_NULL && error("cannot wrap null LSOutcome pointer")
 
-        raw_term = ccall((:bollard_ls_outcome_termination, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
-        raw_sol = ccall((:bollard_ls_outcome_solution, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
-        raw_stats = ccall((:bollard_ls_outcome_statistics, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
+        try
+            raw_term = ccall((:bollard_ls_outcome_termination, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
+            raw_sol = ccall((:bollard_ls_outcome_solution, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
+            raw_stats = ccall((:bollard_ls_outcome_statistics, libbollard_ffi), Ptr{Cvoid}, (Ptr{Cvoid},), ptr)
 
-        term_obj = LSTermination(raw_term)
-        sol_obj = Solution(raw_sol)
-        stats_obj = LSStatistics(raw_stats)
+            term_obj = LSTermination(raw_term)
+            sol_obj = Solution(raw_sol)
+            stats_obj = LSStatistics(raw_stats)
 
-        instance = new(ptr, term_obj, sol_obj, stats_obj)
+            instance = new(ptr, term_obj, sol_obj, stats_obj)
 
-        finalizer(instance) do x
-            ptr_to_free = x.ptr
-            x.ptr = C_NULL
-            if ptr_to_free != C_NULL
-                ccall((:bollard_ls_outcome_free, libbollard_ffi), Cvoid, (Ptr{Cvoid},), ptr_to_free)
+            finalizer(instance) do x
+                ptr_to_free = x.ptr
+                x.ptr = C_NULL
+                if ptr_to_free != C_NULL
+                    ccall((:bollard_ls_outcome_free, libbollard_ffi), Cvoid, (Ptr{Cvoid},), ptr_to_free)
+                end
             end
+            return instance
+        catch e
+            ccall((:bollard_ls_outcome_free, libbollard_ffi), Cvoid, (Ptr{Cvoid},), ptr)
+            rethrow(e)
         end
-        return instance
     end
 end
 
@@ -419,11 +424,13 @@ A compound operator that cycles through a list of sub-operators in order.
 """
 mutable struct RoundRobinOperator <: AbstractLSOperator
     ptr::Ptr{Cvoid}
+    operators::Vector{<:AbstractLSOperator}
+
     function RoundRobinOperator(ops::Vector{<:AbstractLSOperator})
         raw_ptrs = map(op -> release!(copy(op)), ops)
         ptr = ccall((:bollard_ls_round_robin_operator_new, libbollard_ffi), Ptr{Cvoid},
             (Ptr{Ptr{Cvoid}}, Csize_t), raw_ptrs, length(raw_ptrs))
-        obj = new(ptr)
+        obj = new(ptr, ops)
         finalizer(obj) do x
             p = x.ptr
             x.ptr = C_NULL
@@ -434,6 +441,8 @@ mutable struct RoundRobinOperator <: AbstractLSOperator
         return obj
     end
 end
+
+Base.copy(op::RoundRobinOperator) = RoundRobinOperator(op.operators)
 
 """
     RandomCompoundOperator(operators::Vector{<:AbstractLSOperator})
@@ -443,11 +452,13 @@ A compound operator that selects a sub-operator uniformly at random.
 """
 mutable struct RandomCompoundOperator <: AbstractLSOperator
     ptr::Ptr{Cvoid}
+    operators::Vector{<:AbstractLSOperator}
+
     function RandomCompoundOperator(ops::Vector{<:AbstractLSOperator})
         raw_ptrs = map(op -> release!(copy(op)), ops)
         ptr = ccall((:bollard_ls_random_compound_operator_new, libbollard_ffi), Ptr{Cvoid},
             (Ptr{Ptr{Cvoid}}, Csize_t), raw_ptrs, length(raw_ptrs))
-        obj = new(ptr)
+        obj = new(ptr, ops)
         finalizer(obj) do x
             p = x.ptr
             x.ptr = C_NULL
@@ -458,6 +469,8 @@ mutable struct RandomCompoundOperator <: AbstractLSOperator
         return obj
     end
 end
+
+Base.copy(op::RandomCompoundOperator) = RandomCompoundOperator(op.operators)
 
 """
     MultiArmedBanditOperator(operators::Vector{<:AbstractLSOperator}; memory_coeff=0.5, exploration_coeff=1.0)
@@ -467,12 +480,16 @@ A compound operator that uses a Multi-Armed Bandit strategy to select effective 
 """
 mutable struct MultiArmedBanditOperator <: AbstractLSOperator
     ptr::Ptr{Cvoid}
+    operators::Vector{<:AbstractLSOperator}
+    memory_coeff::Float64
+    exploration_coeff::Float64
+
     function MultiArmedBanditOperator(ops::Vector{<:AbstractLSOperator}; memory_coeff::Float64=0.5, exploration_coeff::Float64=1.0)
         raw_ptrs = map(op -> release!(copy(op)), ops)
         ptr = ccall((:bollard_ls_new_multi_armed_bandit_compound_operator, libbollard_ffi), Ptr{Cvoid},
             (Ptr{Ptr{Cvoid}}, Csize_t, Float64, Float64),
             raw_ptrs, length(raw_ptrs), memory_coeff, exploration_coeff)
-        obj = new(ptr)
+        obj = new(ptr, ops, memory_coeff, exploration_coeff)
         finalizer(obj) do x
             p = x.ptr
             x.ptr = C_NULL
@@ -483,6 +500,8 @@ mutable struct MultiArmedBanditOperator <: AbstractLSOperator
         return obj
     end
 end
+
+Base.copy(op::MultiArmedBanditOperator) = MultiArmedBanditOperator(op.operators; memory_coeff=op.memory_coeff, exploration_coeff=op.exploration_coeff)
 
 # =========================================================================
 # Neighborhoods
