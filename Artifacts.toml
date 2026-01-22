@@ -1,50 +1,50 @@
 [[bollard_ffi]]
 arch = "x86_64"
-git-tree-sha1 = "bdab87d559c9566a24b029c856b288b556cd58f3"
+git-tree-sha1 = "beb27a7ff66c3ca292f6c0a329473f98600e88af"
 libc = "glibc"
 os = "linux"
 
     [[bollard_ffi.download]]
-    sha256 = "bf8485bca092061ea9a11417f5b30cd0cd2cae5a39d7901c669d709c92c5b3fc"
-    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-670ff3400490df9ecf280b5cecc7cd420103972c/bollard-linux-x64.tar.gz"
+    sha256 = "c6b5ae88b92191b61cae26b8c9b83fcc571917eda90f3f66d8d369e1afe79544"
+    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-387e19b63b3695e34672bfed16124aae05ac9c78/bollard-linux-x64.tar.gz"
 [[bollard_ffi]]
 arch = "aarch64"
-git-tree-sha1 = "a4b9b2c1f776a34087f680b1f5b7283d760508a9"
+git-tree-sha1 = "1c69f2d6ef48ecba7b637782918ea58b97b55386"
 libc = "glibc"
 os = "linux"
 
     [[bollard_ffi.download]]
-    sha256 = "10dd832c78f8314492488d48bb0491db2a0cf766b446aab35bc75e4e318caab0"
-    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-670ff3400490df9ecf280b5cecc7cd420103972c/bollard-linux-arm64.tar.gz"
+    sha256 = "20969f727353de6c0a08c02cb6d3a1e7506eabeba2a9228a6668a1ae54a95be6"
+    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-387e19b63b3695e34672bfed16124aae05ac9c78/bollard-linux-arm64.tar.gz"
 [[bollard_ffi]]
 arch = "x86_64"
-git-tree-sha1 = "e74942137e9edde7d3e3dd1c0a1f9fa2608d6e24"
+git-tree-sha1 = "405d68c75e86077c847d34a418e7c2e44dea902f"
 os = "windows"
 
     [[bollard_ffi.download]]
-    sha256 = "8882875e677d3223100710c32809fc516e2ff16ff62934600e5461f5c71bb682"
-    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-670ff3400490df9ecf280b5cecc7cd420103972c/bollard-windows-x64.tar.gz"
+    sha256 = "060e205aa4d98048ff82ed93daf54d61d32adafb5a83ff8402653c1280b482c8"
+    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-387e19b63b3695e34672bfed16124aae05ac9c78/bollard-windows-x64.tar.gz"
 [[bollard_ffi]]
 arch = "aarch64"
-git-tree-sha1 = "846e4ba98b0076d734c0dfb050102aabe20541ac"
+git-tree-sha1 = "3a4ce1468b2ddc8d78d8973378de4495cb749385"
 os = "windows"
 
     [[bollard_ffi.download]]
-    sha256 = "1edd4ea83613300be035a914ff6b7b1528aa0951d2dfdba9665a624762856a3a"
-    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-670ff3400490df9ecf280b5cecc7cd420103972c/bollard-windows-arm64.tar.gz"
+    sha256 = "7c0fb94d698cf4951f96ed3365bd94713b713aa801b9ffc0d314e3bc9d7ceab4"
+    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-387e19b63b3695e34672bfed16124aae05ac9c78/bollard-windows-arm64.tar.gz"
 [[bollard_ffi]]
 arch = "x86_64"
-git-tree-sha1 = "f2bea239b649b57d33f655df394433d75a8abcae"
+git-tree-sha1 = "d7b8ace0ab17a74d5d303cb8cc63b6814ff155f9"
 os = "macos"
 
     [[bollard_ffi.download]]
-    sha256 = "c57d87970987d3439ae33af868a59bd5342b8863c7d6545141c7c31275c4b3f7"
-    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-670ff3400490df9ecf280b5cecc7cd420103972c/bollard-macos-x64.tar.gz"
+    sha256 = "94f1a93085921f2433e98039b630c4c8d42b2af3ad68a8526a628c0d112a3418"
+    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-387e19b63b3695e34672bfed16124aae05ac9c78/bollard-macos-x64.tar.gz"
 [[bollard_ffi]]
 arch = "aarch64"
-git-tree-sha1 = "70f0cc71a74e3cd808ff5aa231d81182d5024c3b"
+git-tree-sha1 = "2ff762e0c6316e271ce04abbe679962872d798c7"
 os = "macos"
 
     [[bollard_ffi.download]]
-    sha256 = "16c19e5ff3adb51c0b59866fb673aea27b2e70a305f560906c9d41af5ddc9fb9"
-    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-670ff3400490df9ecf280b5cecc7cd420103972c/bollard-macos-arm64.tar.gz"
+    sha256 = "52dc32bd692c19d5836c24779536524006f7160f91817e86cf07196f5fb37432"
+    url = "https://github.com/FelixKahle/Bollard.jl/releases/download/build-387e19b63b3695e34672bfed16124aae05ac9c78/bollard-macos-arm64.tar.gz"
