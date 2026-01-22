@@ -146,7 +146,80 @@ end
     end
 
     # =========================================================================
-    # 4. Input Validation (Bounds)
+    # 4. Weighted Total Flow Time
+    # =========================================================================
+    @testset "Weighted Total Flow Time" begin
+        # Create a simple model
+        builder = ModelBuilder(2, 3)  # 2 berths, 3 vessels
+
+        # Vessel 1: arrives at 0, weight 2
+        builder.arrival_time!(1, 0)
+        builder.latest_departure_time!(1, 100)
+        builder.weight!(1, 2)
+
+        # Vessel 2: arrives at 10, weight 3
+        builder.arrival_time!(2, 10)
+        builder.latest_departure_time!(2, 100)
+        builder.weight!(2, 3)
+
+        # Vessel 3: arrives at 5, weight 1
+        builder.arrival_time!(3, 5)
+        builder.latest_departure_time!(3, 100)
+        builder.weight!(3, 1)
+
+        # Set processing times
+        for v in 1:3
+            for b in 1:2
+                builder.processing_time!(v, b, 10)
+            end
+        end
+
+        model = builder.build()
+
+        # Create a solution
+        # Vessel 1 -> Berth 1, starts at 0, completes at 10
+        # Vessel 2 -> Berth 2, starts at 10, completes at 20
+        # Vessel 3 -> Berth 1, starts at 10, completes at 20
+        ref_berths = [1, 2, 1]
+        ref_starts = [0, 10, 10]
+
+        ptr = create_dummy_solution_ptr(0, ref_berths, ref_starts)
+        sol = Bollard.Solution(ptr)
+
+        # Calculate weighted total flow time
+        wft = sol.weighted_total_flow_time(model)
+
+        # Verify it returns a valid Int64
+        @test wft isa Int64
+
+        # Flow time for each vessel:
+        # Vessel 1: completion(10) - arrival(0) = 10, weight=2 => 20
+        # Vessel 2: completion(20) - arrival(10) = 10, weight=3 => 30
+        # Vessel 3: completion(20) - arrival(5) = 15, weight=1 => 15
+        # Total: 20 + 30 + 15 = 65
+        @test wft == 65
+
+        # Test with invalidated model
+        builder2 = ModelBuilder(1, 1)
+        builder2.arrival_time!(1, 0)
+        builder2.latest_departure_time!(1, 100)
+        builder2.weight!(1, 1)
+        builder2.processing_time!(1, 1, 10)
+        model2 = builder2.build()
+
+        # Manually invalidate model2
+        finalize(model2)
+        @test_throws ErrorException sol.weighted_total_flow_time(model2)
+
+        # Test with freed solution
+        ptr2 = create_dummy_solution_ptr(0, [1], [0])
+        sol2 = Bollard.Solution(ptr2)
+        finalize(sol2)
+        @test_throws ErrorException sol2.weighted_total_flow_time(model)
+    end
+
+    # =========================================================================
+    # 5. Input Validation (Bounds)
     # =========================================================================
     @testset "Input Validation (Bounds)" begin
         ptr = create_dummy_solution_ptr(0, [1, 1], [0, 0])
@@ -165,7 +238,7 @@ end
     end
 
     # =========================================================================
-    # 5. Memory Safety & Use-After-Free
+    # 6. Memory Safety & Use-After-Free
     # =========================================================================
     @testset "Memory Safety & Use-After-Free" begin
         ptr = create_dummy_solution_ptr(0, [1], [10])
@@ -192,7 +265,7 @@ end
     end
 
     # =========================================================================
-    # 6. Garbage Collection Safety (View Persistence)
+    # 7. Garbage Collection Safety (View Persistence)
     # =========================================================================
     @testset "Safe View GC Persistence" begin
         function create_and_drop_sol()
